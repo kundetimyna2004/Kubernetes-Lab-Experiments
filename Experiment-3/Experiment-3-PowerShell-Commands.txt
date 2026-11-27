@@ -1,0 +1,56 @@
+﻿# Experiment 3 - Kubernetes Controller using client-go
+
+# Check tools
+go version
+kubectl config use-context kind-klu
+kubectl get nodes
+
+# Create Go project
+mkdir $HOME\welcome-controller
+cd $HOME\welcome-controller
+go mod init welcome-controller
+Copy-Item $HOME\Downloads\main.go .
+dir
+
+# Download libraries and build
+go get k8s.io/client-go@v0.37.1 k8s.io/api@v0.37.1 k8s.io/apimachinery@v0.37.1
+go mod tidy
+go build .
+
+# Run controller (Window 1)
+go run .
+
+# Create namespace and label (Window 2)
+kubectl create namespace team-a
+kubectl get configmap -n team-a
+kubectl label namespace team-a klu.edu/managed=true
+kubectl get namespace team-a --show-labels
+kubectl get configmap -n team-a
+kubectl get configmap welcome -n team-a -o yaml
+
+# Experiment A - Self healing
+kubectl delete configmap welcome -n team-a
+kubectl get configmap -n team-a
+
+# Experiment B - Controller restart
+kubectl create namespace team-b
+kubectl label namespace team-b klu.edu/managed=true
+kubectl get configmap -n team-b
+go run .
+kubectl get configmap -n team-b
+
+# Experiment C - Multiple controllers
+cd $HOME\welcome-controller
+go run .
+kubectl create namespace team-c
+kubectl label namespace team-c klu.edu/managed=true
+kubectl get configmap -n team-c
+
+# Experiment D - Remove label
+kubectl label namespace team-a klu.edu/managed-
+kubectl get namespace team-a --show-labels
+kubectl get configmap -n team-a
+
+# Cleanup
+kubectl delete namespace team-a team-b team-c
+kubectl get namespaces
