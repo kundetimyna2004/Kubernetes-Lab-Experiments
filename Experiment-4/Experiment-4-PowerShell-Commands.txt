@@ -1,0 +1,76 @@
+﻿# Experiment 4: Read the Scheduler and Find Why Pods Stay Pending
+# Student ID: 2601050093
+
+# STEP 0 - Cluster verification
+kubectl config use-context kind-klu
+kubectl get nodes
+kubectl describe node klu-control-plane | Select-String "Taints"
+git --version
+
+# STEP 1 - Download Kubernetes scheduler source code
+cd $HOME
+git clone --depth 1 --branch v1.37.0 --filter=blob:none --sparse https://github.com/kubernetes/kubernetes.git k8s-src
+cd k8s-src
+git sparse-checkout set pkg/scheduler staging/src/k8s.io/kube-scheduler
+dir pkg\scheduler
+
+# STEP 2 - Find default scheduler plugins and weights
+notepad pkg\scheduler\apis\config\v1\default_plugins.go
+Select-String -Path pkg\scheduler\apis\config\v1\default_plugins.go -Pattern "Name: names"
+
+# STEP 3 - Find Filter and Score functions
+Get-ChildItem pkg\scheduler\framework\plugins -Recurse -Filter *.go -Exclude *_test.go | Select-String -Pattern "^func \(.*\) (Filter|Score)\("
+
+# STEP 4 - Trace scheduling cycle
+Select-String -Path pkg\scheduler\schedule_one.go -Pattern "^func .*(ScheduleOne|schedulingCycle|bindingCycle|schedulePod|findNodesThatFitPod|prioritizeNodes)\("
+
+# STEP 5 - Experiment A: Insufficient CPU
+mkdir $HOME\lab4
+cd $HOME\lab4
+notepad big.yaml
+kubectl apply -f big.yaml
+kubectl get pod big
+kubectl describe pod big
+Select-String -Path $HOME\k8s-src\pkg\scheduler\framework\plugins\noderesources\fit.go -Pattern "Insufficient"
+
+# STEP 6 - Experiment B: Node Affinity
+notepad ssd.yaml
+kubectl apply -f ssd.yaml
+kubectl describe pod needs-ssd
+kubectl label node klu-worker disktype=ssd
+kubectl get pod needs-ssd -o wide
+Select-String -Path $HOME\k8s-src\pkg\scheduler\framework\plugins\nodeaffinity\node_affinity.go -Pattern "didn't match"
+
+# STEP 7 - Experiment C: Taints and tolerations
+kubectl taint node klu-worker exam=running:NoSchedule
+kubectl create deployment spread --image=nginx:1.27 --replicas=4
+kubectl get pods -l app=spread -o wide
+notepad spread-tol.yaml
+kubectl apply -f spread-tol.yaml
+kubectl get pods -l app=spread -o wide
+kubectl taint node klu-worker exam=running:NoSchedule-
+
+# STEP 8 - Experiment D: Host ports
+notepad hostport.yaml
+kubectl apply -f hostport.yaml
+kubectl get pods -l app=hostport -o wide
+kubectl describe pod <PENDING-POD-NAME>
+Select-String -Path $HOME\k8s-src\pkg\scheduler\framework\plugins\nodeports\node_ports.go -Pattern "free ports"
+
+# STEP 9 - Experiment E: Cordon and uncordon
+kubectl cordon klu-worker
+kubectl cordon klu-worker2
+kubectl get nodes
+kubectl run closed --image=nginx:1.27
+kubectl describe pod closed
+kubectl uncordon klu-worker
+kubectl uncordon klu-worker2
+kubectl get pod closed -o wide
+
+# STEP 10 - Cleanup
+kubectl delete pod big needs-ssd closed
+kubectl delete deployment spread hostport
+kubectl label node klu-worker disktype-
+kubectl get pods
+
+# END OF EXPERIMENT 4
